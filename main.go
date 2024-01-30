@@ -131,6 +131,7 @@ func createDeck() []Card {
 func runSimulation(deck []Card) Simulation {
 	var turnCount int64 = 0
 	hand, deck := deck[:7], deck[7:]
+	log.Printf("hand: %+v\n - deck: %+v\n", hand, deck)
 
 	if checkComboWin(hand, 2) {
 		return Simulation{
