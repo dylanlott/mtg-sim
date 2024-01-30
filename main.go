@@ -119,10 +119,13 @@ func createDeck() []Card {
 		})
 	}
 
+	return shuffleDeck(deck)
+}
+
+func shuffleDeck(deck []Card) []Card {
 	rand.Shuffle(len(deck), func(i, j int) {
 		deck[i], deck[j] = deck[j], deck[i]
 	})
-
 	return deck
 }
 
