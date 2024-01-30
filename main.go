@@ -1,5 +1,11 @@
 package main
 
+// This is a Monte Carlo simulation for how fast a 2 card combo can be
+// drawn into in Magic: The Gathering. It simplifies the game down to
+// just lands and non-lands, with non-lands being the only cards capable
+// of being combo pieces. This simulation assumes 2 combo cards in hand
+// is a win-con and doesn't attempt to discern if the combo was castable.
+
 import (
 	"fmt"
 	"log"
@@ -20,14 +26,15 @@ type Results struct {
 	averageTurnWin float64
 }
 
+// Records the turn count that the winning combo was drawn
 type Simulation struct {
 	// turn number that drew into combo piece win
 	turn int64
 }
 
 // this first scenario models a 37 land deck with 62 permanents and
-// 2 combo pieces. this deck is then shuffled several times and run
-// until it hits it's combo and records the results.
+// 2 combo pieces. this deck is then shuffled and run until it hits
+// both combo pieces snd records the turn count that happened.
 func main() {
 	fmt.Println("mtg-sim booting up")
 	var input = make(chan Simulation, 10000)
@@ -38,6 +45,7 @@ func main() {
 	fmt.Printf("results: %v\n", results)
 }
 
+// runScenario runs a deck simulations a given number of times.
 func runScenario(input chan Simulation) (Results, error) {
 	var numSimulations = 10_000
 	var results = Results{}
@@ -80,6 +88,8 @@ func runScenario(input chan Simulation) (Results, error) {
 	return results, nil
 }
 
+// createDeck creates a deck with the default setup of lands,
+// non-lands, and combo pieces.
 func createDeck() []Card {
 	// setup the distribution of cards for our simulation
 	var numLands = 37
@@ -122,6 +132,7 @@ func createDeck() []Card {
 	return shuffleDeck(deck)
 }
 
+// shuffleDeck shuffles a slice of Cards and returns the shuffled slice
 func shuffleDeck(deck []Card) []Card {
 	rand.Shuffle(len(deck), func(i, j int) {
 		deck[i], deck[j] = deck[j], deck[i]
