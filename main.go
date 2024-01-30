@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
+	"sync"
 )
 
 // Card holds the information for a card in the game
@@ -14,8 +16,13 @@ type Card struct {
 
 // Results records the results of a scenario run
 type Results struct {
-	attempts  int64
-	successes int64
+	attempts       int64
+	averageTurnWin float64
+}
+
+type Simulation struct {
+	// turn number that drew into combo piece win
+	turn int64
 }
 
 // this first scenario models a 37 land deck with 62 permanents and
@@ -23,10 +30,54 @@ type Results struct {
 // until it hits it's combo and records the results.
 func main() {
 	fmt.Println("mtg-sim booting up")
-	deck := createDeck()
-	results := runSimulation(deck)
-	// TODO run results concurrently
-	fmt.Printf("results: %+v\n", results)
+	var input = make(chan Simulation, 10000)
+	results, err := runScenario(input)
+	if err != nil {
+		log.Fatalf("error: %+v", err)
+	}
+	fmt.Printf("results: %v\n", results)
+}
+
+func runScenario(input chan Simulation) (Results, error) {
+	var numSimulations = 10_000
+	var results = Results{}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(numSimulations)
+
+	go func(input chan Simulation) {
+		for i := 0; i < numSimulations; i++ {
+			deck := createDeck()
+			input <- runSimulation(deck)
+		}
+	}(input)
+
+	var turnCounts = []int64{}
+	go func() {
+		for {
+			select {
+			case sim := <-input:
+				fmt.Printf("sim: %v\n", sim)
+				results.attempts++
+				turnCounts = append(turnCounts, sim.turn)
+				wg.Done()
+			}
+		}
+	}()
+
+	wg.Wait()
+
+	// calculate the sum
+	var sum int64 = 0
+	for _, value := range turnCounts {
+		sum += value
+	}
+
+	// Calculate the average
+	average := float64(sum) / float64(len(turnCounts))
+	results.averageTurnWin = average
+
+	return results, nil
 }
 
 func createDeck() []Card {
@@ -72,14 +123,7 @@ func createDeck() []Card {
 		deck[i], deck[j] = deck[j], deck[i]
 	})
 
-	fmt.Printf("deck: %+v\n", deck)
-
 	return deck
-}
-
-type Simulation struct {
-	// turn number that drew into combo piece win
-	turn int64
 }
 
 // runSimulation starts drawing down until it hits a win con and
