@@ -15,39 +15,47 @@ import (
 
 // Card holds the information for a card in the game
 type Card struct {
-	id      int64
-	keyword string
-	combo   bool
+	keyword string // denotes land or non-land
+	combo   bool   // denotes a combo piece
 }
 
-// Results records the results of a scenario run
+// Results collates the simulations of a scenario run
 type Results struct {
-	attempts       int64
-	averageTurnWin float64
+	attempts               int64
+	averageDrawsToWin      float64
+	openingHandWins        int64
+	averageOpeningHandWins float64
 }
 
-// Records the turn count that the winning combo was drawn
+// Simulation holds the results of the sim's run
 type Simulation struct {
-	// turn number that drew into combo piece win
-	turn int64
+	// drawsToWinCon is the number of draws to find the required
+	// number of combo pieces
+	drawsToWinCon int64
+	// openingHandWinCon is true if the first 7 cards drawn
+	// contained the required number of combo pieces
+	openingHandWin bool
 }
 
 // this first scenario models a 37 land deck with 62 permanents and
 // 2 combo pieces. this deck is then shuffled and run until it hits
 // both combo pieces snd records the turn count that happened.
 func main() {
-	fmt.Println("mtg-sim booting up")
-	var input = make(chan Simulation, 10000)
-	results, err := runScenario(input)
+	fmt.Println("🔮 mtg-sim booting up")
+
+	var numSimulations = 10_000_000
+	var input = make(chan Simulation, 10_000)
+
+	results, err := runScenario(input, numSimulations)
 	if err != nil {
 		log.Fatalf("error: %+v", err)
 	}
-	fmt.Printf("results: %v\n", results)
+
+	fmt.Printf("📊 results:\n%+v\n", results)
 }
 
 // runScenario runs a deck simulations a given number of times.
-func runScenario(input chan Simulation) (Results, error) {
-	var numSimulations = 10_000
+func runScenario(input chan Simulation, numSimulations int) (Results, error) {
 	var results = Results{}
 
 	wg := &sync.WaitGroup{}
@@ -60,14 +68,19 @@ func runScenario(input chan Simulation) (Results, error) {
 		}
 	}(input)
 
-	var turnCounts = []int64{}
+	var drawCount = []int64{}
+	var openingWinCount = 0
 	go func() {
 		for {
 			select {
 			case sim := <-input:
-				fmt.Printf("sim: %v\n", sim)
 				results.attempts++
-				turnCounts = append(turnCounts, sim.turn)
+				// record an opening hand win
+				if sim.openingHandWin {
+					openingWinCount++
+				}
+				// record draws to required win
+				drawCount = append(drawCount, sim.drawsToWinCon)
 				wg.Done()
 			}
 		}
@@ -75,15 +88,18 @@ func runScenario(input chan Simulation) (Results, error) {
 
 	wg.Wait()
 
-	// calculate the sum
+	// calculate the sum and average of draw counts
 	var sum int64 = 0
-	for _, value := range turnCounts {
+	for _, value := range drawCount {
 		sum += value
 	}
 
-	// Calculate the average
-	average := float64(sum) / float64(len(turnCounts))
-	results.averageTurnWin = average
+	// calculate average draws to find win-con
+	average := float64(sum) / float64(len(drawCount))
+	results.averageDrawsToWin = average
+	// calculate opening hand win average
+	results.averageOpeningHandWins = float64(openingWinCount) / float64(results.attempts)
+	results.openingHandWins = int64(openingWinCount)
 
 	return results, nil
 }
@@ -96,7 +112,7 @@ func createDeck() []Card {
 	// set the number of non-lands to the rest of the deck
 	var numNonLands = 99 - numLands
 	// assumes the commander is not a part of the combo strategy
-	var numComboPieces = 2
+	var numComboPieces = 4
 
 	// create a deck
 	var deck []Card
@@ -104,7 +120,6 @@ func createDeck() []Card {
 	// add lands to the deck
 	for i := 0; i < numLands; i++ {
 		deck = append(deck, Card{
-			id:      int64(i),
 			keyword: "land",
 		})
 	}
@@ -112,7 +127,6 @@ func createDeck() []Card {
 	// add non-combo permanents
 	for i := 0; i < numNonLands-numComboPieces; i++ {
 		deck = append(deck, Card{
-			id:      int64(i),
 			keyword: "non-land",
 			combo:   false,
 		})
@@ -123,7 +137,6 @@ func createDeck() []Card {
 	// the win condition.
 	for i := 0; i < numComboPieces; i++ {
 		deck = append(deck, Card{
-			id:      int64(i),
 			keyword: "non-land",
 			combo:   true,
 		})
@@ -143,18 +156,18 @@ func shuffleDeck(deck []Card) []Card {
 // runSimulation starts drawing down until it hits a win con and
 // then records the results of the simulation for later analysis
 func runSimulation(deck []Card) Simulation {
-	var turnCount int64 = 0
-	hand, deck := deck[:7], deck[7:]
-	log.Printf("hand: %+v\n - deck: %+v\n", hand, deck)
+	var drawCount int64 = 0
+	hand, deck := deck[:6], deck[7:]
 
 	if checkComboWin(hand, 2) {
 		return Simulation{
-			turn: turnCount,
+			drawsToWinCon:  drawCount,
+			openingHandWin: true,
 		}
 	}
 
 	for i := 0; i < len(deck)-len(hand); i++ {
-		turnCount++
+		drawCount++
 		// draw
 		drawn := deck[0]
 		deck = deck[1:]
@@ -162,12 +175,16 @@ func runSimulation(deck []Card) Simulation {
 		// check if enough combo pieces have been hit
 		if checkComboWin(hand, 2) {
 			return Simulation{
-				turn: turnCount,
+				drawsToWinCon:  drawCount,
+				openingHandWin: false,
 			}
 		}
 	}
 
-	return Simulation{turn: turnCount}
+	return Simulation{
+		drawsToWinCon:  drawCount,
+		openingHandWin: false,
+	}
 }
 
 // checks if the required number of combo cards has been drawn
