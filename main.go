@@ -25,6 +25,7 @@ type Results struct {
 	averageDrawsToWin      float64
 	openingHandWins        int64
 	averageOpeningHandWins float64
+	averageOpeningLands    float64
 }
 
 // Simulation holds the results of the sim's run
@@ -35,6 +36,9 @@ type Simulation struct {
 	// openingHandWinCon is true if the first 7 cards drawn
 	// contained the required number of combo pieces
 	openingHandWin bool
+	// openingHandLands records the number of lands drawn in the
+	// opening hand
+	openingHandLands int
 }
 
 // this first scenario models a 37 land deck with 62 permanents and
@@ -42,7 +46,6 @@ type Simulation struct {
 // both combo pieces snd records the turn count that happened.
 func main() {
 	fmt.Println("🔮 mtg-sim booting up")
-
 	var numSimulations = 10_000_000
 	var input = make(chan Simulation, 10_000)
 
@@ -69,6 +72,7 @@ func runScenario(input chan Simulation, numSimulations int) (Results, error) {
 	}(input)
 
 	var drawCount = []int64{}
+	var openingLandCount = []int64{}
 	var openingWinCount = 0
 	go func() {
 		for {
@@ -81,6 +85,8 @@ func runScenario(input chan Simulation, numSimulations int) (Results, error) {
 				}
 				// record draws to required win
 				drawCount = append(drawCount, sim.drawsToWinCon)
+				// record opening hand lands
+				openingLandCount = append(openingLandCount, int64(sim.openingHandLands))
 				wg.Done()
 			}
 		}
@@ -88,18 +94,23 @@ func runScenario(input chan Simulation, numSimulations int) (Results, error) {
 
 	wg.Wait()
 
-	// calculate the sum and average of draw counts
-	var sum int64 = 0
+	// calculate the drawSum and average of draw counts
+	var drawSum int64 = 0
 	for _, value := range drawCount {
-		sum += value
+		drawSum += value
 	}
 
-	// calculate average draws to find win-con
-	average := float64(sum) / float64(len(drawCount))
-	results.averageDrawsToWin = average
-	// calculate opening hand win average
+	// calculate opening land averages
+	var landSum int64 = 0
+	for _, val := range openingLandCount {
+		landSum += val
+	}
+
+	// calculate averages for each category
+	results.averageDrawsToWin = float64(drawSum) / float64(len(drawCount))
 	results.averageOpeningHandWins = float64(openingWinCount) / float64(results.attempts)
 	results.openingHandWins = int64(openingWinCount)
+	results.averageOpeningLands = float64(landSum) / float64(results.attempts)
 
 	return results, nil
 }
@@ -159,6 +170,14 @@ func runSimulation(deck []Card) Simulation {
 	var drawCount int64 = 0
 	hand, deck := deck[:6], deck[7:]
 
+	openingLands := 0
+	// check lands in opening hand
+	for _, c := range hand {
+		if c.keyword == "land" {
+			openingLands++
+		}
+	}
+
 	if checkComboWin(hand, 2) {
 		return Simulation{
 			drawsToWinCon:  drawCount,
@@ -182,8 +201,9 @@ func runSimulation(deck []Card) Simulation {
 	}
 
 	return Simulation{
-		drawsToWinCon:  drawCount,
-		openingHandWin: false,
+		drawsToWinCon:    drawCount,
+		openingHandWin:   false,
+		openingHandLands: openingLands,
 	}
 }
 
